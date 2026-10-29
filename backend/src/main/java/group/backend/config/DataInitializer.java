@@ -14,17 +14,31 @@ public class DataInitializer {
     public CommandLineRunner initData(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         return args -> {
             try {
-                if (userRepository.findByUsername("Petra").isEmpty()) {
+                if (userRepository.findByUsername("petra").isEmpty()) {
                     User user = new User();
-                    user.setUsername("Petra");
+                    user.setUsername("petra");
                     user.setPassword(passwordEncoder.encode("1234"));
                     userRepository.save(user);
-                    System.out.println("Default test user created successfully: username = 'Petra', password = '1234'");
+                    System.out.println("Default test user created successfully: username = 'petra', password = '1234'");
                 } else {
                     System.out.println("Default test user 'Petra' already exists.");
                 }
             } catch (Exception e) {
-                System.out.println("User 'Petra' already exists, skipping creation.");
+                System.out.println("Skipping creation for 'Petra': " + e.getMessage());
+            }
+
+            try {
+                if (userRepository.findByUsername("maria").isEmpty()) {
+                    User user2 = new User();
+                    user2.setUsername("maria");
+                    user2.setPassword(passwordEncoder.encode("1234"));
+                    userRepository.save(user2);
+                    System.out.println("Default test user created successfully: username = 'maria', password = '1234'");
+                } else {
+                    System.out.println("Default test user 'John' already exists.");
+                }
+            } catch (Exception e) {
+                System.out.println("Skipping creation for 'John': " + e.getMessage());
             }
         };
     }

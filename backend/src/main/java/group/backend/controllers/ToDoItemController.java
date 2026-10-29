@@ -2,12 +2,13 @@ package group.backend.controllers;
 
 import group.backend.models.ToDoItem;
 import group.backend.models.User;
-import group.backend.repositories.ToDoItemRepository;
 import group.backend.repositories.UserRepository;
+import group.backend.services.ToDoItemService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.security.Principal;
 import java.util.List;
@@ -17,48 +18,40 @@ import java.util.List;
 @RequestMapping("/api/todos")
 public class ToDoItemController {
 
-    private final ToDoItemRepository toDoItemRepository;
+    private final ToDoItemService toDoItemService;
     private final UserRepository userRepository;
 
     @Autowired
-    public ToDoItemController(ToDoItemRepository toDoItemRepository, UserRepository userRepository) {
-        this.toDoItemRepository = toDoItemRepository;
+    public ToDoItemController(ToDoItemService toDoItemService, UserRepository userRepository) {
+        this.toDoItemService = toDoItemService;
         this.userRepository = userRepository;
+    }
+
+    private User currentUser(Principal principal) {
+        return userRepository.findByUsername(principal.getName())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
     }
 
     @GetMapping
     public ResponseEntity<List<ToDoItem>> getAllItems(Principal principal) {
-        String username = principal.getName();
-        User user = userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("User not found"));
-        return ResponseEntity.ok(toDoItemRepository.findByUserId(user.getId()));
+        return ResponseEntity.ok(toDoItemService.getItemsByUserId(currentUser(principal).getId()));
     }
 
     @PostMapping
     public ResponseEntity<ToDoItem> createItem(@RequestBody ToDoItem item, Principal principal) {
-        String username = principal.getName();
-        User user = userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("User not found"));
-
-        // Link the item to the authenticated user
-        item.setUser(user);
-
-        ToDoItem savedItem = toDoItemRepository.save(item);
-        return ResponseEntity.ok(savedItem);
+        item.setId(null);
+        item.setUser(currentUser(principal));
+        return ResponseEntity.ok(toDoItemService.saveToDoItem(item));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<ToDoItem> updateItem(@PathVariable Long id, @RequestBody ToDoItem item, Principal principal) {
-        String username = principal.getName();
-        User user = userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("User not found"));
-
-        item.setUser(user);
-        item.setId(id);
-        ToDoItem updatedItem = toDoItemRepository.save(item);
-        return ResponseEntity.ok(updatedItem);
+        return ResponseEntity.ok(toDoItemService.updateToDoItem(id, item, currentUser(principal)));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteItem(@PathVariable Long id) {
-        toDoItemRepository.deleteById(id);
+    public ResponseEntity<?> deleteItem(@PathVariable Long id, Principal principal) {
+        toDoItemService.deleteToDoItem(id, currentUser(principal));
         return ResponseEntity.ok().build();
     }
 }

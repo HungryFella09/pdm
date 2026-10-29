@@ -1,7 +1,8 @@
 export interface ItemProps {
   id?: number;
-  title: string;       
-  priority: number;    
-  dueDate: string;     
+  title: string;
+  priority: number;
+  dueDate: string;
   isCompleted: boolean;
+  pending?: boolean; 
 }

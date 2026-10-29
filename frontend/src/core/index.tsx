@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { Preferences } from '@capacitor/preferences';
+
 export const baseUrl = 'localhost:8080';
 
 export const getLogger: (tag: string) => (...args: any) => void =
@@ -10,11 +11,6 @@ const log = getLogger('api');
 export interface ResponseProps<T> {
   data: T;
 }
-
-export interface ResponseProps<T> {
-  data: T;
-}
-
 
 export function withLogs<T>(promise: Promise<ResponseProps<T>>, fnName: string): Promise<T> {
   log(`${fnName} - started`);
@@ -34,4 +30,3 @@ export const config = {
     'Content-Type': 'application/json'
   }
 };
-

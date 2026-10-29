@@ -33,7 +33,6 @@ const ItemEdit: React.FC = () => {
   const [item, setItem] = useState<ItemProps>();
 
   useEffect(() => {
-    log('useEffect');
     const routeId = id ? parseInt(id, 10) : undefined;
     const currentItem = items?.find(it => it.id === routeId);
     setItem(currentItem);
@@ -46,6 +45,7 @@ const ItemEdit: React.FC = () => {
   }, [id, items]);
 
   const handleSave = () => {
+    log('handleSave requested');
     const editedItem = item 
       ? { ...item, title, priority, dueDate, isCompleted } 
       : { title, priority, dueDate, isCompleted };
@@ -53,7 +53,6 @@ const ItemEdit: React.FC = () => {
     saveItem && saveItem(editedItem as ItemProps).then(() => navigate(-1));
   };
 
-  log('render');
   return (
     <IonPage>
       <IonHeader>

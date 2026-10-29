@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { baseUrl, getLogger, withLogs } from '../core';
 import { ItemProps } from './ItemProps';
+import { getMemoryToken } from '../auth/authApi';
 
 const itemUrl = `http://${baseUrl}/api/todos`;
 
@@ -28,7 +29,14 @@ interface MessageData {
 const log = getLogger('ws');
 
 export const newWebSocket = (onMessage: (data: MessageData) => void) => {
-  const ws = new WebSocket(`ws://${baseUrl}/ws/todos`);
+  const token = getMemoryToken();
+  log('WebSocket attempting connection, token present:', !!token);
+  
+  const wsUrl = `ws://${baseUrl}/ws/todos${token ? `?token=${token}` : ''}`;
+  log('WebSocket full URL constructed');
+  
+  const ws = new WebSocket(wsUrl);
+
   ws.onopen = () => {
     log('web socket onopen');
   };
@@ -39,10 +47,16 @@ export const newWebSocket = (onMessage: (data: MessageData) => void) => {
     log('web socket onerror', error);
   };
   ws.onmessage = messageEvent => {
-    log('web socket onmessage');
-    onMessage(JSON.parse(messageEvent.data));
+    log('web socket onmessage received raw:', messageEvent.data);
+    try {
+      const parsedData = JSON.parse(messageEvent.data);
+      onMessage(parsedData);
+    } catch (e) {
+      log('Failed to parse websocket message', e);
+    }
   };
+
   return () => {
     ws.close();
-  }
+  };
 }

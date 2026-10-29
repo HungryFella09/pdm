@@ -1,9 +1,10 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { getItems, createItem, updateItem, deleteItem, newWebSocket } from './itemApi';
 import { ItemProps } from './ItemProps';
 import { Preferences } from '@capacitor/preferences';
 import { Network } from '@capacitor/network';
 import { getLogger } from '../core';
+import { AuthContext } from '../auth/AuthProvider';
 
 const log = getLogger('ItemProvider');
 
@@ -27,12 +28,87 @@ interface ItemProviderProps {
 }
 
 export const ItemProvider: React.FC<ItemProviderProps> = ({ children }) => {
+  const { isAuthenticated } = useContext(AuthContext);
   const [items, setItems] = useState<ItemProps[]>([]);
   const [fetching, setFetching] = useState<boolean>(false);
   const [fetchingError, setFetchingError] = useState<Error | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
   const [savingError, setSavingError] = useState<Error | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(true);
+
+  
+  const itemsRef = useRef<ItemProps[]>([]);
+
+  const commit = useCallback((updated: ItemProps[]) => {
+    itemsRef.current = updated;
+    setItems(updated);
+    Preferences.set({ key: STORAGE_KEY, value: JSON.stringify(updated) });
+  }, []);
+
+  const hydrate = useCallback(async () => {
+    const cached = await Preferences.get({ key: STORAGE_KEY });
+    const list: ItemProps[] = cached.value ? JSON.parse(cached.value) : [];
+    itemsRef.current = list;
+    setItems(list);
+  }, []);
+
+  
+  const upsert = useCallback((replaceId: number | undefined, saved: ItemProps) => {
+    const current = itemsRef.current.filter(i => i.id === replaceId || i.id !== saved.id);
+    const exists = current.some(i => i.id === replaceId);
+    commit(exists
+      ? current.map(i => (i.id === replaceId ? saved : i))
+      : [saved, ...current]);
+  }, [commit]);
+
+
+  const syncPending = useCallback(async () => {
+    for (const item of itemsRef.current.filter(i => i.pending)) {
+      try {
+        const { pending, ...payload } = item;
+        const isServerItem = item.id !== undefined && item.id > 0;
+        const saved = isServerItem
+          ? await updateItem(payload)
+          : await createItem({ ...payload, id: undefined });
+        upsert(item.id, saved);
+      } catch (error) {
+        log('sync failed, will retry on next reconnect', item.id, error);
+      }
+    }
+  }, [upsert]);
+
+  const loadItems = useCallback(async () => {
+    if (!isAuthenticated) {
+      itemsRef.current = [];
+      setItems([]);
+      await Preferences.remove({ key: STORAGE_KEY });
+      return;
+    }
+    setFetching(true);
+    setFetchingError(null);
+    try {
+      await hydrate(); 
+      const { connected } = await Network.getStatus();
+      if (connected) {
+        await syncPending();
+        const pendingItems = itemsRef.current.filter(i => i.pending);
+        const pendingIds = new Set(pendingItems.map(i => i.id));
+        const fetched = await getItems();
+        
+        commit([
+          ...pendingItems,
+          ...fetched.filter(i => !pendingIds.has(i.id)),
+        ]);
+      } else {
+        log('Offline mode: using local cache');
+      }
+    } catch (error) {
+      log('Fetch items failed, using local cache', error);
+      setFetchingError(error as Error);
+    } finally {
+      setFetching(false);
+    }
+  }, [isAuthenticated, hydrate, syncPending, commit]);
 
   useEffect(() => {
     const checkNetwork = async () => {
@@ -45,139 +121,94 @@ export const ItemProvider: React.FC<ItemProviderProps> = ({ children }) => {
       log('network status changed', status.connected);
       setIsOnline(status.connected);
       if (status.connected) {
-        loadItems();
+        loadItems(); 
       }
     });
 
     return () => {
       handler.then(h => h.remove());
     };
-  }, []);
-
-  const loadItems = useCallback(async () => {
-    try {
-      setFetching(true);
-      setFetchingError(null);
-      const status = await Network.getStatus();
-      
-      if (status.connected) {
-        log('Fetching items from server...');
-        const fetchedItems = await getItems();
-        setItems(fetchedItems);
-        await Preferences.set({ key: STORAGE_KEY, value: JSON.stringify(fetchedItems) });
-      } else {
-        log('Offline mode: Loading items from local storage...');
-        const cached = await Preferences.get({ key: STORAGE_KEY });
-        if (cached.value) {
-          setItems(JSON.parse(cached.value));
-        }
-      }
-    } catch (error) {
-      log('Fetch items failed, falling back to local cache', error);
-      setFetchingError(error as Error);
-      const cached = await Preferences.get({ key: STORAGE_KEY });
-      if (cached.value) {
-        setItems(JSON.parse(cached.value));
-      }
-    } finally {
-      setFetching(false);
-    }
-  }, []);
+  }, [loadItems]);
 
   useEffect(() => {
     loadItems();
   }, [loadItems]);
 
   useEffect(() => {
-    let cancelWebSocket: (() => void) | undefined;
-    if (isOnline) {
-      log('Initializing WebSocket...');
-      cancelWebSocket = newWebSocket(message => {
-        log('websocket message received', message);
-        const { type, payload: item } = message;
-        if (type === 'created' || type === 'updated') {
-          setItems(prevItems => {
-            const index = prevItems?.findIndex(i => i.id === item.id);
-            let updated: ItemProps[];
-            if (index === -1) {
-              updated = [item, ...(prevItems || [])];
-            } else {
-              updated = prevItems!.map(i => (i.id === item.id ? item : i));
-            }
-            Preferences.set({ key: STORAGE_KEY, value: JSON.stringify(updated) });
-            return updated;
-          });
-        }
-      });
+    if (!isOnline || !isAuthenticated) {
+      return;
     }
-    return () => {
-      if (cancelWebSocket) {
-        cancelWebSocket();
+    log('Initializing WebSocket...');
+    const cancelWebSocket = newWebSocket(message => {
+      log('websocket message received', message);
+      const { type, payload: item } = message;
+      if (type !== 'created' && type !== 'updated') {
+        return;
       }
-    };
-  }, [isOnline]);
+      const current = itemsRef.current;
+      const existing = current.find(i => i.id === item.id);
+      if (!existing) {
+        commit([item, ...current]);
+      } else if (!existing.pending) {
+        
+        commit(current.map(i => (i.id === item.id ? item : i)));
+      }
+    });
+    return cancelWebSocket;
+  }, [isOnline, isAuthenticated, commit]);
+
+  
+  const queueLocally = useCallback((item: ItemProps) => {
+    const current = itemsRef.current;
+    if (item.id === undefined) {
+      const local: ItemProps = { ...item, id: -Date.now(), pending: true };
+      commit([local, ...current]);
+    } else {
+      commit(current.map(i => (i.id === item.id ? { ...item, pending: true } : i)));
+    }
+  }, [commit]);
 
   const saveItemHandler = useCallback(async (item: ItemProps) => {
+    setSaving(true);
+    setSavingError(null);
     try {
-      setSaving(true);
-      setSavingError(null);
-      const status = await Network.getStatus();
-
-      if (status.connected) {
-        let savedItem: ItemProps;
-        if (item.id) {
-          savedItem = await updateItem(item);
-        } else {
-          savedItem = await createItem(item);
+      const { connected } = await Network.getStatus();
+      if (connected) {
+        try {
+          const { pending, ...payload } = item;
+          const isServerItem = item.id !== undefined && item.id > 0;
+          const saved = isServerItem
+            ? await updateItem(payload)
+            : await createItem({ ...payload, id: undefined });
+          upsert(item.id, saved);
+          return;
+        } catch (error) {
+          log('REST save failed, storing locally', error);
         }
-        log('item saved successfully to server', savedItem);
-        setItems(prevItems => {
-          const index = prevItems?.findIndex(i => i.id === savedItem.id);
-          let updated: ItemProps[];
-          if (index === -1) {
-            updated = [savedItem, ...(prevItems || [])];
-          } else {
-            updated = prevItems!.map(i => (i.id === savedItem.id ? savedItem : i));
-          }
-          Preferences.set({ key: STORAGE_KEY, value: JSON.stringify(updated) });
-          return updated;
-        });
-      } else {
-        log('Offline mode: saving item locally');
-        const offlineItem = { ...item, id: item.id || Date.now() };
-        setItems(prevItems => {
-          const updated = [offlineItem, ...(prevItems || [])];
-          Preferences.set({ key: STORAGE_KEY, value: JSON.stringify(updated) });
-          return updated;
-        });
       }
+      queueLocally(item);
     } catch (error) {
       log('saveItem failed', error);
       setSavingError(error as Error);
-      throw error;
     } finally {
       setSaving(false);
     }
-  }, []);
+  }, [upsert, queueLocally]);
 
   const deleteItemHandler = useCallback(async (id: number) => {
+    setSaving(true);
     try {
-      setSaving(true);
-      const status = await Network.getStatus();
-      if (status.connected) {
+      const { connected } = await Network.getStatus();
+      if (connected && id > 0) {
         await deleteItem(id);
       }
-      setItems(prevItems => {
-        const updated = prevItems?.filter(i => i.id !== id) || [];
-        Preferences.set({ key: STORAGE_KEY, value: JSON.stringify(updated) });
-        return updated;
-      });
+      commit(itemsRef.current.filter(i => i.id !== id));
     } catch (error) {
       log('deleteItem failed', error);
     } finally {
       setSaving(false);
     }
-  }, []);
+  }, [commit]);
 
   const value = {
     items,

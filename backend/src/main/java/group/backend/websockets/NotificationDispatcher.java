@@ -8,15 +8,13 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-import java.util.Collections;
-import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class NotificationDispatcher extends TextWebSocketHandler {
 
-
-    private final Set<WebSocketSession> sessions = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final Map<WebSocketSession, String> sessionUsers = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
 
     public NotificationDispatcher() {
@@ -26,21 +24,29 @@ public class NotificationDispatcher extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        sessions.add(session);
+        String username = (String) session.getAttributes().get("username");
+        if (username != null) {
+            sessionUsers.put(session, username);
+        }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        sessions.remove(session);
+        sessionUsers.remove(session);
     }
 
-    public void broadcast(String type, Object payload) {
+    public void broadcastToUser(String username, String type, Object payload) {
         try {
-            BroadcastMessage msg = new BroadcastMessage(type, payload);
-            TextMessage textMessage = new TextMessage(objectMapper.writeValueAsString(msg));
-            for (WebSocketSession session : sessions) {
-                if (session.isOpen()) {
-                    session.sendMessage(textMessage);
+            TextMessage message = new TextMessage(
+                    objectMapper.writeValueAsString(new BroadcastMessage(type, payload)));
+            for (Map.Entry<WebSocketSession, String> entry : sessionUsers.entrySet()) {
+                WebSocketSession session = entry.getKey();
+                if (username.equals(entry.getValue()) && session.isOpen()) {
+                    try {
+                        session.sendMessage(message);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         } catch (Exception e) {

@@ -105,7 +105,10 @@ export const ItemList: React.FC = () => {
             <IonItem key={item.id} routerLink={`/item/${item.id}`}>
               <IonLabel>
                 <h2>{item.title}</h2>
-                <p>Priority: {item.priority} | Due: {item.dueDate} | {item.isCompleted ? 'Done' : 'Active'}</p>
+                <p>
+                  Priority: {item.priority} | Due: {item.dueDate} | {item.isCompleted ? 'Done' : 'Active'}
+                  {item.pending && ' | Not synced'}
+                </p>
               </IonLabel>
             </IonItem>
           ))}

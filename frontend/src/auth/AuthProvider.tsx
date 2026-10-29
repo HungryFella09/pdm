@@ -64,7 +64,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const value = { isAuthenticated, login, logout, isAuthenticating, authenticationError, token };
   
-  log('render');
   return (
     <AuthContext.Provider value={value}>
       {children}
@@ -72,12 +71,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   function loginCallback(username?: string, password?: string): void {
-    log('login');
+    log('login requested');
     setState(s => ({ ...s, pendingAuthentication: true, username, password }));
   }
 
   async function logoutCallback() {
-    log('logout');
+    log('logout requested');
     setMemoryToken(null);
     await Preferences.remove({ key: 'token' });
     setState({ ...initialState });
@@ -91,7 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async function authenticate() {
       if (!pendingAuthentication) return;
       try {
-        log('authenticate...');
+        log('authenticating...');
         setState(s => ({ ...s, isAuthenticating: true, authenticationError: null }));
         const { username, password } = state;
         const { token } = await loginApi(username, password);
@@ -99,11 +98,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         setMemoryToken(token);
         await Preferences.set({ key: 'token', value: token });
-        log('authenticate succeeded');
+        log('authentication succeeded');
         setState(s => ({ ...s, token, pendingAuthentication: false, isAuthenticated: true, isAuthenticating: false }));
       } catch (error) {
         if (canceled) return;
-        log('authenticate failed');
+        log('authentication failed');
         setState(s => ({ ...s, authenticationError: error as Error, pendingAuthentication: false, isAuthenticating: false }));
       }
     }
