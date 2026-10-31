@@ -5,4 +5,8 @@ export interface ItemProps {
   dueDate: string;
   isCompleted: boolean;
   pending?: boolean; 
+  lat?: number;
+  lng?: number;
+  photoPath?: string;
+  webviewPath?: string;
 }

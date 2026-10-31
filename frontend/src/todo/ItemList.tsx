@@ -1,131 +1,181 @@
-import React, { useContext, useState } from 'react';
-import { 
-  IonContent, 
-  IonHeader, 
-  IonPage, 
-  IonTitle, 
-  IonToolbar, 
-  IonList, 
-  IonItem, 
-  IonLabel, 
-  IonFab, 
-  IonFabButton, 
-  IonIcon, 
-  IonLoading, 
-  IonButton,
+import React, { useContext, useEffect, useRef, useState } from 'react';
+import {
+  IonContent,
+  IonHeader,
   IonInfiniteScroll,
   IonInfiniteScrollContent,
+  IonItem,
+  IonLabel,
+  IonList,
+  IonPage,
   IonSearchbar,
   IonSegment,
   IonSegmentButton,
-  useIonRouter
+  IonTitle,
+  IonToolbar,
+  IonButton,
+  IonButtons,
+  IonFab,
+  IonFabButton,
+  IonIcon,
+  useIonViewDidEnter,
+  createAnimation
 } from '@ionic/react';
 import { add, logOut } from 'ionicons/icons';
 import { ItemContext } from './ItemProvider';
-import { AuthContext } from '../auth';
+import { useFilesystem } from './useFilesystem';
+import { AuthContext } from '../auth/AuthProvider';
+import { useNavigate } from 'react-router-dom';
+import { getLogger } from '../core';
 
+const log = getLogger('ItemList');
 const PAGE_SIZE = 10;
 
-export const ItemList: React.FC = () => {
+const ItemList: React.FC = () => {
   const { items, fetching, fetchingError, isOnline } = useContext(ItemContext);
   const { logout } = useContext(AuthContext);
-  const router = useIonRouter();
+  const { readFile } = useFilesystem();
+  const navigate = useNavigate();
 
-  const [searchText, setSearchText] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [displayedCount, setDisplayedCount] = useState(PAGE_SIZE);
+  const [disableInfiniteScroll, setDisableInfiniteScroll] = useState(false);
+  const [itemThumbnails, setItemThumbnails] = useState<{ [key: string]: string }>({});
 
-  const [displayedCount, setDisplayedCount] = useState<number>(PAGE_SIZE);
-  const [disableInfiniteScroll, setDisableInfiniteScroll] = useState<boolean>(false);
+  const listAnimRef = useRef<HTMLDivElement>(null);
+
+  useIonViewDidEnter(() => {
+    if (listAnimRef.current) {
+      const animation = createAnimation()
+        .addElement(listAnimRef.current)
+        .duration(600)
+        .fromTo('transform', 'translateY(30px)', 'translateY(0)')
+        .fromTo('opacity', '0', '1');
+
+      animation.play();
+    }
+  });
+
+  useEffect(() => {
+    if (!items) return;
+    items.forEach(async (item) => {
+      if (item.photoPath && !itemThumbnails[item.photoPath]) {
+        try {
+          const data = await readFile(item.photoPath);
+          setItemThumbnails(prev => ({ ...prev, [item.photoPath!]: `data:image/jpeg;base64,${data}` }));
+        } catch (e) {
+          setItemThumbnails(prev => ({ ...prev, [item.photoPath!]: `http://localhost:8080/photos/${item.photoPath}` }));
+        }
+      }
+    });
+  }, [items, readFile]);
 
   const filteredItems = items?.filter(item => {
-    const matchesSearch = item.title?.toLowerCase().includes(searchText.toLowerCase());
+    const matchesSearch = item.title.toLowerCase().includes(searchText.toLowerCase());
     const matchesStatus = 
       statusFilter === 'all' ? true :
-      statusFilter === 'completed' ? item.isCompleted :
-      statusFilter === 'active' ? !item.isCompleted : true;
-    
+      statusFilter === 'active' ? !item.isCompleted :
+      item.isCompleted;
     return matchesSearch && matchesStatus;
   }) || [];
 
   const paginatedItems = filteredItems.slice(0, displayedCount);
 
-  const loadMoreData = async (event: CustomEvent<void>) => {
+  function loadData(ev: any) {
     setTimeout(() => {
-      setDisplayedCount(prevCount => {
-        const nextCount = prevCount + PAGE_SIZE;
+      setDisplayedCount(prev => {
+        const nextCount = prev + PAGE_SIZE;
         if (nextCount >= filteredItems.length) {
           setDisableInfiniteScroll(true);
         }
         return nextCount;
       });
-      (event.target as HTMLIonInfiniteScrollElement).complete();
+      ev.target.complete();
     }, 500);
-  };
+  }
 
   return (
     <IonPage>
       <IonHeader>
         <IonToolbar>
-          <IonTitle>My To-Do Tasks {!isOnline && '(Offline Mode)'}</IonTitle>
-          <IonButton slot="end" fill="clear" onClick={() => logout && logout()}>
-            <IonIcon icon={logOut} slot="icon-only" />
-          </IonButton>
+          <IonTitle>My Tasks {!isOnline && '(Offline Mode)'}</IonTitle>
+          <IonButtons slot="end">
+            <IonButton onClick={() => logout?.()}>
+              <IonIcon icon={logOut} slot="icon-only" />
+            </IonButton>
+          </IonButtons>
         </IonToolbar>
-
         <IonToolbar>
-          <IonSearchbar 
-            value={searchText} 
-            onIonInput={e => setSearchText(e.detail.value || '')} 
-            placeholder="Search tasks..." 
+          <IonSearchbar
+            value={searchText}
+            onIonInput={e => {
+              setSearchText(e.detail.value || '');
+              setDisplayedCount(PAGE_SIZE);
+              setDisableInfiniteScroll(false);
+            }}
+            placeholder="Search tasks..."
           />
-        </IonToolbar>
-
-        <IonToolbar>
-          <IonSegment value={statusFilter} onIonChange={e => setStatusFilter(String(e.detail.value))}>
-            <IonSegmentButton value="all">
-              <IonLabel>All</IonLabel>
-            </IonSegmentButton>
-            <IonSegmentButton value="active">
-              <IonLabel>Active</IonLabel>
-            </IonSegmentButton>
-            <IonSegmentButton value="completed">
-              <IonLabel>Completed</IonLabel>
-            </IonSegmentButton>
+          <IonSegment
+            value={statusFilter}
+            onIonChange={e => {
+              setStatusFilter(e.detail.value as any);
+              setDisplayedCount(PAGE_SIZE);
+              setDisableInfiniteScroll(false);
+            }}
+          >
+            <IonSegmentButton value="all">All</IonSegmentButton>
+            <IonSegmentButton value="active">Active</IonSegmentButton>
+            <IonSegmentButton value="completed">Completed</IonSegmentButton>
           </IonSegment>
         </IonToolbar>
       </IonHeader>
 
       <IonContent fullscreen>
-        <IonLoading isOpen={fetching} message="Fetching tasks..." />
-        
-        {fetchingError && <div>{fetchingError.message}</div>}
+        {/* Animated container wrapping the list */}
+        <div ref={listAnimRef}>
+          <IonList>
+            {paginatedItems.map((item) => {
+              const thumb = item.photoPath ? itemThumbnails[item.photoPath] || item.webviewPath : undefined;
+              return (
+                <IonItem key={item.id} routerLink={`/item/${item.id}`}>
+                  {/* Photo Thumbnail Displayed in List */}
+                  {thumb ? (
+                    <img
+                      slot="start"
+                      src={thumb}
+                      style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px', margin: '8px 0' }}
+                      alt="task thumbnail"
+                    />
+                  ) : (
+                    <div slot="start" style={{ width: '50px', height: '50px' }} />
+                  )}
+                  
+                  <IonLabel>
+                    <h2>{item.title}</h2>
+                    <p>
+                      Priority: {item.priority} | Due: {item.dueDate} | {item.isCompleted ? 'Done' : 'Active'}
+                      {item.pending && ' | Pending Sync'}
+                    </p>
+                    {item.lat != null && item.lng != null && (
+                      <p> {item.lat.toFixed(5)}, {item.lng.toFixed(5)}</p>
+                    )}
+                  </IonLabel>
+                </IonItem>
+              );
+            })}
+          </IonList>
+        </div>
 
-        <IonList>
-          {paginatedItems.map((item) => (
-            <IonItem key={item.id} routerLink={`/item/${item.id}`}>
-              <IonLabel>
-                <h2>{item.title}</h2>
-                <p>
-                  Priority: {item.priority} | Due: {item.dueDate} | {item.isCompleted ? 'Done' : 'Active'}
-                  {item.pending && ' | Not synced'}
-                </p>
-              </IonLabel>
-            </IonItem>
-          ))}
-        </IonList>
-
-        <IonInfiniteScroll 
-          disabled={disableInfiniteScroll} 
-          onIonInfinite={loadMoreData}
+        <IonInfiniteScroll
+          onIonInfinite={loadData}
+          disabled={disableInfiniteScroll}
         >
-          <IonInfiniteScrollContent 
-            loadingSpinner="bubbles" 
-            loadingText="Loading more tasks..." 
-          />
+          <IonInfiniteScrollContent loadingText="Loading more tasks..." />
         </IonInfiniteScroll>
 
         <IonFab vertical="bottom" horizontal="end" slot="fixed">
-          <IonFabButton onClick={() => router.push('/item')}>
+          <IonFabButton onClick={() => navigate('/item')}>
             <IonIcon icon={add} />
           </IonFabButton>
         </IonFab>
@@ -133,3 +183,6 @@ export const ItemList: React.FC = () => {
     </IonPage>
   );
 };
+
+export { ItemList };
+export default ItemList;

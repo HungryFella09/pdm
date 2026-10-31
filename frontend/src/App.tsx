@@ -21,6 +21,7 @@ import { ItemList } from './todo';
 import { ItemProvider } from './todo/ItemProvider';
 import ItemEdit from './todo/ItemEdit';
 import { AuthProvider, Login, PrivateRoute } from './auth';
+import ItemMap from './todo/itemMap';
 
 setupIonicReact();
 
@@ -34,6 +35,7 @@ const App: React.FC = () => (
             <Route path="/items" element={<PrivateRoute element={<ItemList />} path="/items" />} />
             <Route path="/item" element={<PrivateRoute element={<ItemEdit />} path="/item" />} />
             <Route path="/item/:id" element={<PrivateRoute element={<ItemEdit />} path="/item/:id" />} />
+            <Route path="/item/:id/map" element={<PrivateRoute path="/item/:id/map" element={<ItemMap />} />} />
             <Route path="/" element={<Navigate to="/items" replace />} />
           </IonRouterOutlet>
         </IonReactRouter>

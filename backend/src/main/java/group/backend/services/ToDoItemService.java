@@ -9,6 +9,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 
@@ -16,6 +21,7 @@ import java.util.Objects;
 public class ToDoItemService {
     private final ToDoItemRepository toDoItemRepository;
     private final NotificationDispatcher notificationDispatcher;
+    private final String uploadDir = "uploads/photos/";
 
     @Autowired
     public ToDoItemService(ToDoItemRepository toDoItemRepository, NotificationDispatcher notificationDispatcher) {
@@ -35,10 +41,14 @@ public class ToDoItemService {
 
     public ToDoItem updateToDoItem(Long id, ToDoItem toDoItem, User user) {
         ToDoItem existing = getOwnedItem(id, user);
+
         existing.setTitle(toDoItem.getTitle());
         existing.setPriority(toDoItem.getPriority());
         existing.setDueDate(toDoItem.getDueDate());
         existing.setIsCompleted(toDoItem.getIsCompleted());
+        existing.setPhotoPath(toDoItem.getPhotoPath());
+        existing.setLat(toDoItem.getLat());
+        existing.setLng(toDoItem.getLng());
 
         ToDoItem updatedItem = toDoItemRepository.save(existing);
         notificationDispatcher.broadcastToUser(user.getUsername(), "updated", updatedItem);

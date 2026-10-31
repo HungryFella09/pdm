@@ -26,6 +26,15 @@ public class ToDoItem {
     @Column(name = "is_completed")
     private Boolean isCompleted;
 
+    @Column(name = "photo_path")
+    private String photoPath;
+
+    @Column(name = "lat")
+    private Double lat;
+
+    @Column(name = "lng")
+    private Double lng;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
