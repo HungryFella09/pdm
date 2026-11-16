@@ -1,5 +1,5 @@
 import { Navigate, Route } from 'react-router-dom';
-import { IonApp, IonRouterOutlet, setupIonicReact } from '@ionic/react';
+import { IonApp, IonRouterOutlet, setupIonicReact, createAnimation } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 
 /* Core CSS required for Ionic components to work properly */
@@ -25,12 +25,42 @@ import ItemMap from './todo/itemMap';
 
 setupIonicReact();
 
+const customTransition = (
+  _: HTMLElement,
+  opts: { enteringEl: HTMLElement; leavingEl: HTMLElement; direction?: string }
+) => {
+  const enteringEl = opts.enteringEl;
+  const leavingEl = opts.leavingEl;
+
+  const rootTransition = createAnimation()
+    .duration(400)
+    .easing('cubic-bezier(0.36, 0.66, 0.04, 1)');
+
+  const enteringAnimation = createAnimation()
+    .addElement(enteringEl)
+    .fromTo('transform', 'translateY(100%)', 'translateY(0)')
+    .fromTo('opacity', '0', '1');
+
+  const leavingAnimation = createAnimation()
+    .addElement(leavingEl)
+    .fromTo('transform', 'translateY(0)', 'translateY(-20%)')
+    .fromTo('opacity', '1', '0');
+
+  if (opts.direction === 'back') {
+    rootTransition.addAnimation([leavingAnimation, enteringAnimation]);
+  } else {
+    rootTransition.addAnimation([enteringAnimation, leavingAnimation]);
+  }
+
+  return rootTransition;
+};
+
 const App: React.FC = () => (
   <IonApp>
     <AuthProvider>
       <ItemProvider>
         <IonReactRouter>
-          <IonRouterOutlet>
+          <IonRouterOutlet animation={customTransition}>
             <Route path="/login" element={<Login />} />
             <Route path="/items" element={<PrivateRoute element={<ItemList />} path="/items" />} />
             <Route path="/item" element={<PrivateRoute element={<ItemEdit />} path="/item" />} />

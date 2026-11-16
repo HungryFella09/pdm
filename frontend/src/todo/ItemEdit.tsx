@@ -19,10 +19,10 @@ import {
 import { getLogger } from '../core';
 import { ItemContext } from './ItemProvider';
 import { ItemProps } from './ItemProps';
-import { useCamera } from './useCamera';
 import { useFilesystem } from './useFilesystem';
 import { useMyLocation } from './useMyLocation';
 import MyMap from '../components/MyMap';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 
 const log = getLogger('ItemEdit');
 
@@ -34,7 +34,6 @@ const ItemEdit: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { items, saving, savingError, saveItem } = useContext(ItemContext);
-  const { getPhoto } = useCamera();
   const { readFile, writeFile } = useFilesystem();
   const myLocation = useMyLocation();
 
@@ -104,15 +103,57 @@ const ItemEdit: React.FC = () => {
     setLng(newLng);
   }, []);
 
+  // 1. Take a photo using the device camera
   const handleTakePhoto = async () => {
     try {
-      const photo = await getPhoto();
-      const fileName = `${Date.now()}.jpeg`;
-      await writeFile(fileName, photo.base64String!);
-      setPhotoPath(fileName);
-      setWebviewPath(`data:image/jpeg;base64,${photo.base64String}`);
+      const photo = await Camera.getPhoto({
+        resultType: CameraResultType.Uri,
+        source: CameraSource.Camera,
+        quality: 90
+      });
+
+      if (photo.webPath) {
+        setWebviewPath(photo.webPath);
+        const fileName = `photo_${Date.now()}.jpeg`;
+        const response = await fetch(photo.webPath);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64Data = (reader.result as string).split(',')[1];
+          await writeFile(fileName, base64Data);
+          setPhotoPath(fileName);
+        };
+        reader.readAsDataURL(blob);
+      }
     } catch (error) {
       log('Camera cancelled or failed', error);
+    }
+  };
+
+  // 2. Upload / pick a photo from the gallery or filesystem
+  const handlePickPhoto = async () => {
+    try {
+      const photo = await Camera.getPhoto({
+        resultType: CameraResultType.Uri,
+        source: CameraSource.Photos,
+        quality: 90
+      });
+
+      if (photo.webPath) {
+        setWebviewPath(photo.webPath);
+        const fileName = `photo_${Date.now()}.jpeg`;
+        const response = await fetch(photo.webPath);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64Data = (reader.result as string).split(',')[1];
+          await writeFile(fileName, base64Data);
+          setPhotoPath(fileName);
+        };
+        reader.readAsDataURL(blob);
+      }
+    } catch (error) {
+      log('Gallery pick cancelled or failed', error);
     }
   };
 
@@ -170,17 +211,23 @@ const ItemEdit: React.FC = () => {
           </IonCheckbox>
         </IonItem>
 
-        {/* Camera */}
+        {/* Photo Actions: Camera & Gallery / Filesystem Upload */}
         <IonItem lines="none" style={{ marginTop: '16px' }}>
-          <IonButton expand="block" onClick={handleTakePhoto}>Take Photo</IonButton>
+          <IonButton expand="block" onClick={handleTakePhoto} style={{ flex: 1, marginRight: '8px' }}>
+            Take Photo
+          </IonButton>
+          <IonButton expand="block" fill="outline" onClick={handlePickPhoto} style={{ flex: 1, marginLeft: '8px' }}>
+            Upload Photo
+          </IonButton>
         </IonItem>
+
         {webviewPath && (
-          <IonItem>
-            <IonImg src={webviewPath} style={{ maxHeight: '200px', width: '100%', objectFit: 'cover' }} />
+          <IonItem lines="none">
+            <IonImg src={webviewPath} style={{ maxHeight: '200px', width: '100%', objectFit: 'cover', borderRadius: '8px' }} />
           </IonItem>
         )}
 
-        {/* Map */}
+        {/* Map Section */}
         <div style={{ padding: '16px 0', textAlign: 'center' }}>
           <h3>Task Location</h3>
           <p style={{ fontSize: '14px', color: '#666' }}>
@@ -196,11 +243,13 @@ const ItemEdit: React.FC = () => {
             />
           </div>
         </div>
+
         <IonButton
           expand="block"
           fill="outline"
-          disabled={item?.lat == null}
+          disabled={lat == null}
           onClick={() => navigate(`/item/${id}/map`)}
+          style={{ margin: '16px' }}
         >
           Show saved location on map
         </IonButton>

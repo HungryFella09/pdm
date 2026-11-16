@@ -26,13 +26,12 @@ import { ItemContext } from './ItemProvider';
 import { useFilesystem } from './useFilesystem';
 import { AuthContext } from '../auth/AuthProvider';
 import { useNavigate } from 'react-router-dom';
-import { getLogger } from '../core';
 
-const log = getLogger('ItemList');
+
 const PAGE_SIZE = 10;
 
 const ItemList: React.FC = () => {
-  const { items, fetching, fetchingError, isOnline } = useContext(ItemContext);
+  const { items, isOnline } = useContext(ItemContext);
   const { logout } = useContext(AuthContext);
   const { readFile } = useFilesystem();
   const navigate = useNavigate();
@@ -45,13 +44,15 @@ const ItemList: React.FC = () => {
 
   const listAnimRef = useRef<HTMLDivElement>(null);
 
+
   useIonViewDidEnter(() => {
     if (listAnimRef.current) {
       const animation = createAnimation()
         .addElement(listAnimRef.current)
-        .duration(600)
-        .fromTo('transform', 'translateY(30px)', 'translateY(0)')
-        .fromTo('opacity', '0', '1');
+        .duration(800) 
+        .easing('cubic-bezier(0.16, 1, 0.3, 1)') 
+        .fromTo('transform', 'translateY(80px) scale(0.95)', 'translateY(0) scale(1)') 
+        .fromTo('opacity', '0', '1'); 
 
       animation.play();
     }
@@ -64,7 +65,7 @@ const ItemList: React.FC = () => {
         try {
           const data = await readFile(item.photoPath);
           setItemThumbnails(prev => ({ ...prev, [item.photoPath!]: `data:image/jpeg;base64,${data}` }));
-        } catch (e) {
+        } catch {
           setItemThumbnails(prev => ({ ...prev, [item.photoPath!]: `http://localhost:8080/photos/${item.photoPath}` }));
         }
       }
@@ -155,7 +156,7 @@ const ItemList: React.FC = () => {
                     <h2>{item.title}</h2>
                     <p>
                       Priority: {item.priority} | Due: {item.dueDate} | {item.isCompleted ? 'Done' : 'Active'}
-                      {item.pending && ' | Pending Sync'}
+                      {item.pending && ' | - '}
                     </p>
                     {item.lat != null && item.lng != null && (
                       <p> {item.lat.toFixed(5)}, {item.lng.toFixed(5)}</p>
